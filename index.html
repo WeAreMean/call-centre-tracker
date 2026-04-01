@@ -233,7 +233,7 @@ function getActual(n,m){return(S.actuals[n]||{})[m]||{made:0,kept:0,pp:0};}
 function calcRow(n,m){
   const t=getTarget(n,m),d=getActual(n,m);
   const made=d.made||0,kept=d.kept||0,pp=d.pp||0;
-  const appBonus=kept*AR,ppBonus=Math.min(pp*PR,t.ppPot);
+  const appBonus=kept*AR,ppBonus=pp*PR;
   return{made,kept,pp,keptTarget:Math.round(t.appTarget*t.keptRatio),
     appPct:t.appTarget>0?made/t.appTarget*100:null,
     conv:made>0?kept/made*100:null,
