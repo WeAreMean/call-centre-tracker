@@ -62,10 +62,19 @@ select:focus,input:focus{border-color:#1A1916;}
 input[type=file]{font-size:13px;color:#6B6960;border:none;background:transparent;padding:4px 0;}
 .import-result{margin-top:14px;font-size:13px;}
 .unmatched{font-size:12px;color:#8A5A00;background:#FDF3E0;border-radius:6px;padding:8px 12px;margin-top:8px;}
+.loading-overlay{position:fixed;inset:0;background:rgba(247,246,243,0.85);display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:999;gap:12px;}
+.loading-spinner{width:28px;height:28px;border:2px solid rgba(0,0,0,0.1);border-top-color:#1A1916;border-radius:50%;animation:spin .7s linear infinite;}
+.loading-text{font-size:13px;color:#6B6960;}
+@keyframes spin{to{transform:rotate(360deg);}}
 @media(max-width:700px){.mrow{grid-template-columns:repeat(2,1fr);}.fgrid{grid-template-columns:1fr;}}
 </style>
 </head>
 <body>
+<div id="loading-overlay" class="loading-overlay">
+  <div class="loading-spinner"></div>
+  <div class="loading-text">Loading data…</div>
+</div>
+
 <div class="app">
   <div class="topbar">
     <button class="tab active" data-tab="dash">Dashboard</button>
@@ -218,27 +227,59 @@ input[type=file]{font-size:13px;color:#6B6960;border:none;background:transparent
       <div class="ct">Data management</div>
       <div class="btn-row">
         <button class="btn" id="export-btn">Export data (JSON)</button>
+        <button class="btn" id="import-json-btn">Import from JSON backup</button>
         <button class="btn danger" id="reset-btn">Reset all data</button>
       </div>
+      <input type="file" id="import-json-file" accept=".json" style="display:none;">
     </div>
   </div>
 </div>
 
 <script>
+// ── Supabase config ──────────────────────────────────────────────────────────
+const SUPABASE_URL = 'https://kxuembwxstrhtgyymyby.supabase.co';
+const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imt4dWVtYnd4c3RyaHRneXlteWJ5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg2MjY1NjYsImV4cCI6MjA5NDIwMjU2Nn0.W8DN0rWCMV0dFv51UhKCw309OHEUbyDdmLMnOqPgP5o';
+const TABLE = 'tracker_data';
+const ROW_ID = 'main';
+
+async function dbLoad() {
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/${TABLE}?id=eq.${ROW_ID}&select=data`, {
+    headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` }
+  });
+  const rows = await res.json();
+  if (rows && rows.length && rows[0].data && rows[0].data.agents) return rows[0].data;
+  return null;
+}
+
+async function dbSave(state) {
+  await fetch(`${SUPABASE_URL}/rest/v1/${TABLE}?id=eq.${ROW_ID}`, {
+    method: 'PATCH',
+    headers: {
+      apikey: SUPABASE_KEY,
+      Authorization: `Bearer ${SUPABASE_KEY}`,
+      'Content-Type': 'application/json',
+      Prefer: 'return=minimal'
+    },
+    body: JSON.stringify({ data: state, updated_at: new Date().toISOString() })
+  });
+}
+
+// ── App constants ────────────────────────────────────────────────────────────
 const MONTHS=['JAN','FEB','MARCH','APRIL','MAY','JUNE','JULY','AUG','SEPT','OCT','NOV','DEC'];
 const ML={JAN:'Jan',FEB:'Feb',MARCH:'Mar',APRIL:'Apr',MAY:'May',JUNE:'Jun',JULY:'Jul',AUG:'Aug',SEPT:'Sep',OCT:'Oct',NOV:'Nov',DEC:'Dec'};
 const MF={JAN:'January',FEB:'February',MARCH:'March',APRIL:'April',MAY:'May',JUNE:'June',JULY:'July',AUG:'August',SEPT:'September',OCT:'October',NOV:'November',DEC:'December'};
-const AR=40,PR=25,STORE='cctracker2026';
+const AR=40,PR=25;
 
 const SEED={
   agents:[
-    {name:'Michelle',fullName:'Michelle Bunnell',appTarget:100,keptRatio:.80,ppTarget:40,ppPot:1000,role:'both'},
-    {name:'Sheniz',  fullName:'Sheniz Taslaman', appTarget:100,keptRatio:.80,ppTarget:40,ppPot:1000,role:'both'},
-    {name:'Lauren',  fullName:'Lauren Madden',   appTarget:48, keptRatio:.80,ppTarget:15,ppPot:375, role:'both'},
-    {name:'Sam',     fullName:'Sam',              appTarget:48, keptRatio:.80,ppTarget:15,ppPot:375, role:'both'},
-    {name:'Dragana', fullName:'Dragana Bjedov',   appTarget:24, keptRatio:.80,ppTarget:15,ppPot:375, role:'both'},
-    {name:'Lance',   fullName:'Lance',            appTarget:0,  keptRatio:0,  ppTarget:70,ppPot:1750,role:'pp'},
-    {name:'Bec',     fullName:'Bec',              appTarget:0,  keptRatio:0,  ppTarget:70,ppPot:1750,role:'pp'},
+    {name:'Michelle',  fullName:'Michelle Bunnell', appTarget:100,keptRatio:.80,ppTarget:40,ppPot:1000,role:'both'},
+    {name:'Sheniz',    fullName:'Sheniz Taslaman',  appTarget:100,keptRatio:.80,ppTarget:40,ppPot:1000,role:'both'},
+    {name:'Lauren',    fullName:'Lauren Madden',    appTarget:48, keptRatio:.80,ppTarget:15,ppPot:375, role:'both'},
+    {name:'Sam',       fullName:'Sam',              appTarget:48, keptRatio:.80,ppTarget:15,ppPot:375, role:'both'},
+    {name:'Dragana',   fullName:'Dragana Bjedov',   appTarget:24, keptRatio:.80,ppTarget:15,ppPot:375, role:'both'},
+    {name:'Lance',     fullName:'Lance',            appTarget:0,  keptRatio:0,  ppTarget:70,ppPot:1750,role:'pp'},
+    {name:'Bec',       fullName:'Bec',              appTarget:0,  keptRatio:0,  ppTarget:70,ppPot:1750,role:'pp'},
+    {name:'Naomi Lewis',fullName:'Naomi Lewis',     appTarget:0,  keptRatio:0,  ppTarget:40,ppPot:1000,role:'pp'},
   ],
   overrides:{
     Michelle:{MARCH:{appTarget:80}},Sheniz:{MARCH:{appTarget:80}},
@@ -252,27 +293,48 @@ const SEED={
     Sam:{},
     Dragana: {JAN:{made:15,kept:17,pp:14},FEB:{made:12,kept:7,pp:17},MARCH:{made:15,kept:10,pp:20}},
     Lance:   {JAN:{made:0,kept:0,pp:63},FEB:{made:0,kept:0,pp:46},MARCH:{made:0,kept:0,pp:33}},
-    Bec:{}
+    Bec:{},
+    'Naomi Lewis':{}
   }
 };
 
-let S,editingAgent=null,bchart=null,pchart=null;
+let S, editingAgent=null, bchart=null, pchart=null;
+let saveTimer=null;
 
-function loadState(){try{const s=localStorage.getItem(STORE);if(s)return JSON.parse(s);}catch(e){}return JSON.parse(JSON.stringify(SEED));}
-function saveState(){try{localStorage.setItem(STORE,JSON.stringify(S));showStatus('Saved');}catch(e){showStatus('Save failed');}setTimeout(()=>showStatus(''),1800);}
-function showStatus(t){document.getElementById('save-status').textContent=t;}
+// ── Save / load ──────────────────────────────────────────────────────────────
+function saveState() {
+  // Write to localStorage immediately as a fast local cache
+  try { localStorage.setItem('cctracker2026_cache', JSON.stringify(S)); } catch(e){}
+  // Debounce Supabase writes (300ms) to avoid hammering on rapid changes
+  clearTimeout(saveTimer);
+  showStatus('Saving…');
+  saveTimer = setTimeout(async () => {
+    try {
+      await dbSave(S);
+      showStatus('Saved ✓');
+    } catch(e) {
+      showStatus('Save failed — check connection');
+    }
+    setTimeout(() => showStatus(''), 2500);
+  }, 300);
+}
+
+function showStatus(t){ document.getElementById('save-status').textContent=t; }
+
+function showLoading(show) {
+  document.getElementById('loading-overlay').style.display = show ? 'flex' : 'none';
+}
+
+// ── Core helpers ─────────────────────────────────────────────────────────────
 function getAgent(n){return S.agents.find(a=>a.name===n);}
 function getTarget(n,m){const a=getAgent(n);if(!a)return{appTarget:0,keptRatio:0,ppTarget:0,ppPot:0,role:'both'};return{...a,...((S.overrides[n]||{})[m]||{})};}
 function getActual(n,m){return(S.actuals[n]||{})[m]||{made:0,kept:0,pp:0};}
 
-// Match a Lead Owner full name to an agent
 function matchAgent(fullName){
   if(!fullName)return null;
   const fn=fullName.trim().toLowerCase();
-  // Try exact fullName match first
   let ag=S.agents.find(a=>(a.fullName||'').toLowerCase()===fn);
   if(ag)return ag;
-  // Try first name match
   const first=fn.split(' ')[0];
   ag=S.agents.find(a=>a.name.toLowerCase()===first);
   return ag||null;
@@ -297,7 +359,7 @@ function pill(v){if(v===null)return'<span class="pl pl-n">N/A</span>';const c=v>
 function ini(n){return n.split(' ').map(w=>w[0]).join('').toUpperCase().slice(0,2);}
 function populateSel(id){const sel=document.getElementById(id),cur=sel.value;sel.innerHTML=S.agents.map(a=>`<option value="${a.name}"${a.name===cur?' selected':''}>${a.name}</option>`).join('');}
 
-// --- DASHBOARD ---
+// ── Dashboard ────────────────────────────────────────────────────────────────
 function renderDash(){
   const month=document.getElementById('dash-month').value;
   const months=month==='annual'?MONTHS:[month];
@@ -338,7 +400,7 @@ function renderDash(){
   ]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{callbacks:{label:ctx=>'£'+Math.round(ctx.parsed.y).toLocaleString('en-GB')}}},scales:{x:{stacked:true,grid:{display:false}},y:{stacked:true,ticks:{callback:v=>'£'+v.toLocaleString('en-GB')},grid:{color:'rgba(0,0,0,0.05)'}}}}});
 }
 
-// --- CSV IMPORT ---
+// ── CSV Import ───────────────────────────────────────────────────────────────
 function parseCSV(text){
   const lines=text.trim().split('\n');
   const headers=lines[0].split(',').map(h=>h.trim().replace(/^"|"$/g,''));
@@ -357,34 +419,12 @@ document.getElementById('csv-import-btn').addEventListener('click',async functio
   const res=document.getElementById('csv-result');
   const ppF2=document.getElementById('csv-pp').files[0];
   if(!mF&&!kF&&!ppF2){res.innerHTML='<span style="color:#8A1F1F">Please select at least one CSV file.</span>';return;}
-
   const agMade={},agKept={},agBonus={},agPP={};
   const unmatched=new Set();
-
-  if(mF){
-    parseCSV(await mF.text()).forEach(r=>{
-      const ag=matchAgent(r['Lead Owner']);
-      if(!ag){unmatched.add(r['Lead Owner']);return;}
-      agMade[ag.name]=(agMade[ag.name]||0)+1;
-    });
-  }
-  if(kF){
-    parseCSV(await kF.text()).forEach(r=>{
-      const ag=matchAgent(r['Lead Owner']);
-      if(!ag){unmatched.add(r['Lead Owner']);return;}
-      agKept[ag.name]=(agKept[ag.name]||0)+1;
-      agBonus[ag.name]=(agBonus[ag.name]||0)+parseFloat(r['Bonus Payment']||0);
-    });
-  }
+  if(mF){parseCSV(await mF.text()).forEach(r=>{const ag=matchAgent(r['Lead Owner']);if(!ag){unmatched.add(r['Lead Owner']);return;}agMade[ag.name]=(agMade[ag.name]||0)+1;});}
+  if(kF){parseCSV(await kF.text()).forEach(r=>{const ag=matchAgent(r['Lead Owner']);if(!ag){unmatched.add(r['Lead Owner']);return;}agKept[ag.name]=(agKept[ag.name]||0)+1;agBonus[ag.name]=(agBonus[ag.name]||0)+parseFloat(r['Bonus Payment']||0);});}
   const ppF=document.getElementById('csv-pp').files[0];
-  if(ppF){
-    parseCSV(await ppF.text()).forEach(r=>{
-      const ag=matchAgent(r['Lead Owner']);
-      if(!ag){unmatched.add(r['Lead Owner']);return;}
-      agPP[ag.name]=(agPP[ag.name]||0)+1;
-    });
-  }
-
+  if(ppF){parseCSV(await ppF.text()).forEach(r=>{const ag=matchAgent(r['Lead Owner']);if(!ag){unmatched.add(r['Lead Owner']);return;}agPP[ag.name]=(agPP[ag.name]||0)+1;});}
   const names=new Set([...Object.keys(agMade),...Object.keys(agKept),...Object.keys(agPP)]);
   const updated=[];
   names.forEach(name=>{
@@ -398,31 +438,18 @@ document.getElementById('csv-import-btn').addEventListener('click',async functio
     };
     updated.push(name);
   });
-
   saveState();renderDash();
-
   if(updated.length){
-    const lines=updated.map(n=>{
-      const d=S.actuals[n][month];
-      return '<strong>'+n+'</strong>: '
-        +(agMade[n]!==undefined?agMade[n]+' made':'—')
-        +(agKept[n]!==undefined?', '+agKept[n]+' kept':'')
-        +(agBonus[n]!==undefined?' &nbsp;·&nbsp; Apps bonus: £'+Math.round(agBonus[n]):'')
-        +(agPP[n]!==undefined?' &nbsp;·&nbsp; PP: '+agPP[n]:'');
-    });
-    let html='<div style="color:#1D6B38;background:#E6F4EC;border-radius:8px;padding:10px 14px;">'
-      +'<strong>Imported successfully</strong><br>'+lines.join('<br>')+'</div>';
-    if(unmatched.size){
-      html+='<div class="unmatched"><strong>Unmatched names</strong> — add these agents in Admin or check spelling:<br>'
-        +[...unmatched].join(', ')+'</div>';
-    }
+    const lines=updated.map(n=>'<strong>'+n+'</strong>: '+(agMade[n]!==undefined?agMade[n]+' made':'—')+(agKept[n]!==undefined?', '+agKept[n]+' kept':'')+(agBonus[n]!==undefined?' &nbsp;·&nbsp; Apps bonus: £'+Math.round(agBonus[n]):'')+(agPP[n]!==undefined?' &nbsp;·&nbsp; PP: '+agPP[n]:''));
+    let html='<div style="color:#1D6B38;background:#E6F4EC;border-radius:8px;padding:10px 14px;"><strong>Imported successfully</strong><br>'+lines.join('<br>')+'</div>';
+    if(unmatched.size){html+='<div class="unmatched"><strong>Unmatched names</strong> — add these agents in Admin or check spelling:<br>'+([ ...unmatched]).join(', ')+'</div>';}
     res.innerHTML=html;
   } else {
     res.innerHTML='<span style="color:#8A1F1F">No agents matched. Check the Lead Owner names in your CSV match the full names set in Admin.</span>';
   }
 });
 
-// --- MANUAL ENTRY ---
+// ── Manual entry ─────────────────────────────────────────────────────────────
 function renderEntry(){
   const month=document.getElementById('e-month').value,agent=document.getElementById('e-agent').value;
   if(!agent)return;
@@ -473,7 +500,7 @@ function updateCalc(){
   document.getElementById('bp-a').textContent=gbp(aB);document.getElementById('bp-p').textContent=gbp(pB);document.getElementById('bp-t').textContent=gbp(aB+pB);
 }
 
-// --- TEAM VIEW ---
+// ── Team view ────────────────────────────────────────────────────────────────
 function renderTeam(){
   const agent=document.getElementById('t-agent').value;if(!agent)return;
   let tB=0,tM=0,tK=0,tP=0;
@@ -485,7 +512,7 @@ function renderTeam(){
   document.getElementById('t-metrics').innerHTML=[['YTD bonus',gbp(tB)],['Apps made',tM.toString()],['Apps kept',tK.toString()],['PP achieved',tP.toString()]].map(([l,v])=>`<div class="mc"><div class="mc-l">${l}</div><div class="mc-v">${v}</div></div>`).join('');
 }
 
-// --- ADMIN ---
+// ── Admin ────────────────────────────────────────────────────────────────────
 function renderAdmin(conf){
   const list=document.getElementById('a-list');
   list.innerHTML='<div class="alist">'+S.agents.map(a=>{const iC=conf===a.name;return`<div class="arow"><div class="av">${ini(a.name)}</div><div><div class="an">${a.name} <span style="font-size:11px;color:#9E9B94;">${a.fullName||''}</span></div><div class="am">${a.role==='pp'?'PP only':'Apps + PP'} &nbsp;·&nbsp; Apps: ${a.appTarget}/mo &nbsp;·&nbsp; PP: ${a.ppTarget}/mo</div></div><div style="margin-left:auto;display:flex;gap:6px;align-items:center;flex-shrink:0;">${iC?`<span style="font-size:12px;color:#8A1F1F;font-weight:500;">Remove?</span><button class="btn danger" style="padding:5px 10px;font-size:12px;" data-act="confirm" data-name="${a.name}">Yes</button><button class="btn" style="padding:5px 10px;font-size:12px;" data-act="cancel">Cancel</button>`:`<button class="btn" style="padding:5px 10px;font-size:12px;" data-act="edit" data-name="${a.name}">Edit targets</button><button class="btn danger" style="padding:5px 10px;font-size:12px;" data-act="remove" data-name="${a.name}">Remove</button>`}</div></div>`;}).join('')+'</div>';
@@ -527,11 +554,12 @@ function saveTargets(){
   S.overrides[editingAgent]=ov;saveState();renderAdmin(null);document.getElementById('te-card').style.display='none';editingAgent=null;
 }
 
-// --- EVENTS ---
+// ── Events ───────────────────────────────────────────────────────────────────
 document.getElementById('dash-month').addEventListener('change',renderDash);
 document.getElementById('e-month').addEventListener('change',renderEntry);
 document.getElementById('e-agent').addEventListener('change',renderEntry);
 document.getElementById('t-agent').addEventListener('change',renderTeam);
+
 document.getElementById('add-btn').addEventListener('click',()=>{
   const name=document.getElementById('a-name').value.trim();
   const fullName=document.getElementById('a-fullname').value.trim();
@@ -541,10 +569,41 @@ document.getElementById('add-btn').addEventListener('click',()=>{
   document.getElementById('a-name').value='';document.getElementById('a-fullname').value='';
   saveState();populateSel('e-agent');populateSel('t-agent');renderAdmin(null);
 });
+
 document.getElementById('te-cancel').addEventListener('click',()=>{document.getElementById('te-card').style.display='none';editingAgent=null;});
 document.getElementById('te-save').addEventListener('click',saveTargets);
-document.getElementById('export-btn').addEventListener('click',()=>{const blob=new Blob([JSON.stringify(S,null,2)],{type:'application/json'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='cctracker-2026-'+new Date().toISOString().slice(0,10)+'.json';a.click();});
-document.getElementById('reset-btn').addEventListener('click',()=>{if(!confirm('Reset all data to defaults?'))return;S=JSON.parse(JSON.stringify(SEED));saveState();populateSel('e-agent');populateSel('t-agent');renderDash();renderAdmin(null);});
+
+document.getElementById('export-btn').addEventListener('click',()=>{
+  const blob=new Blob([JSON.stringify(S,null,2)],{type:'application/json'});
+  const a=document.createElement('a');a.href=URL.createObjectURL(blob);
+  a.download='cctracker-2026-'+new Date().toISOString().slice(0,10)+'.json';a.click();
+});
+
+document.getElementById('import-json-btn').addEventListener('click',()=>{
+  document.getElementById('import-json-file').click();
+});
+document.getElementById('import-json-file').addEventListener('change',async function(){
+  if(!this.files[0])return;
+  try{
+    const text=await this.files[0].text();
+    const parsed=JSON.parse(text);
+    if(!parsed.agents)throw new Error('Invalid backup file');
+    if(!confirm('This will replace all current data with the backup. Continue?'))return;
+    S=parsed;
+    await dbSave(S);
+    try{localStorage.setItem('cctracker2026_cache',JSON.stringify(S));}catch(e){}
+    populateSel('e-agent');populateSel('t-agent');renderDash();renderAdmin(null);
+    showStatus('Backup restored ✓');setTimeout(()=>showStatus(''),2500);
+  }catch(e){alert('Could not read backup file. Make sure it\'s a valid JSON export from this app.');}
+  this.value='';
+});
+
+document.getElementById('reset-btn').addEventListener('click',()=>{
+  if(!confirm('Reset all data to defaults?'))return;
+  S=JSON.parse(JSON.stringify(SEED));
+  saveState();populateSel('e-agent');populateSel('t-agent');renderDash();renderAdmin(null);
+});
+
 document.querySelectorAll('.tab').forEach(t=>t.addEventListener('click',function(){
   document.querySelectorAll('.tab').forEach(x=>x.classList.remove('active'));
   document.querySelectorAll('.pg').forEach(x=>x.classList.remove('on'));
@@ -554,10 +613,36 @@ document.querySelectorAll('.tab').forEach(t=>t.addEventListener('click',function
   if(this.dataset.tab==='admin')renderAdmin(null);
 }));
 
-S=loadState();
-populateSel('e-agent');
-populateSel('t-agent');
-renderDash();
+// ── Boot ─────────────────────────────────────────────────────────────────────
+(async()=>{
+  showLoading(true);
+  try{
+    // Try Supabase first
+    const remote=await dbLoad();
+    if(remote){
+      S=remote;
+    } else {
+      // No remote data yet — check local cache, else use seed
+      try{
+        const cached=localStorage.getItem('cctracker2026_cache');
+        S=cached?JSON.parse(cached):JSON.parse(JSON.stringify(SEED));
+      }catch(e){S=JSON.parse(JSON.stringify(SEED));}
+      // Push whatever we have up to Supabase
+      await dbSave(S);
+    }
+  }catch(e){
+    // Supabase unreachable — fall back to local cache
+    try{
+      const cached=localStorage.getItem('cctracker2026_cache');
+      S=cached?JSON.parse(cached):JSON.parse(JSON.stringify(SEED));
+    }catch(e2){S=JSON.parse(JSON.stringify(SEED));}
+    showStatus('Offline — using local cache');
+  }
+  showLoading(false);
+  populateSel('e-agent');
+  populateSel('t-agent');
+  renderDash();
+})();
 </script>
 </body>
 </html>
