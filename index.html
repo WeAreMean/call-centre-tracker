@@ -155,6 +155,30 @@ input[type=file]{font-size:13px;color:#6B6960;border:none;background:transparent
     </div>
 
     <div class="card">
+      <div class="ct">Year-to-date upload</div>
+      <p style="font-size:13px;color:#6B6960;margin-bottom:16px;">Upload full year exports from Zoho to restore or overwrite all months at once. Useful if data is lost or you need to reset from source.</p>
+      <div class="fgrid" style="max-width:600px;">
+        <div class="fg">
+          <label>Appointments made CSV (full year)</label>
+          <input type="file" id="ytd-made" accept=".csv">
+          <div class="hint">Columns: Lead Owner, Date Appointment Made</div>
+        </div>
+        <div class="fg">
+          <label>Appointments kept CSV (full year)</label>
+          <input type="file" id="ytd-kept" accept=".csv">
+          <div class="hint">Columns: Lead Owner, Appointment Kept Date, Bonus Payment</div>
+        </div>
+        <div class="fg">
+          <label>Pension Pie CSV (full year)</label>
+          <input type="file" id="ytd-pp" accept=".csv">
+          <div class="hint">Columns: Lead Owner, PP Payment Date</div>
+        </div>
+      </div>
+      <div class="btn-row"><button class="btn primary" id="ytd-import-btn">Upload full year</button></div>
+      <div class="import-result" id="ytd-result"></div>
+    </div>
+
+    <div class="card">
       <div class="ct">Manual entry</div>
       <div class="ctrls">
         <label>Month</label>
@@ -235,10 +259,11 @@ const SEED={
     {name:'Michelle',fullName:'Michelle Bunnell',appTarget:100,keptRatio:.80,ppTarget:40,ppPot:1000,role:'both'},
     {name:'Sheniz',  fullName:'Sheniz Taslaman', appTarget:100,keptRatio:.80,ppTarget:40,ppPot:1000,role:'both'},
     {name:'Lauren',  fullName:'Lauren Madden',   appTarget:48, keptRatio:.80,ppTarget:15,ppPot:375, role:'both'},
-    {name:'Sam',     fullName:'Sam',              appTarget:48, keptRatio:.80,ppTarget:15,ppPot:375, role:'both'},
+    {name:'Sam',     fullName:'Samantha O\'Brien',              appTarget:48, keptRatio:.80,ppTarget:15,ppPot:375, role:'both'},
     {name:'Dragana', fullName:'Dragana Bjedov',   appTarget:24, keptRatio:.80,ppTarget:15,ppPot:375, role:'both'},
-    {name:'Lance',   fullName:'Lance',            appTarget:0,  keptRatio:0,  ppTarget:70,ppPot:1750,role:'pp'},
+    {name:'Lance',   fullName:'Lance Whittaker',            appTarget:0,  keptRatio:0,  ppTarget:70,ppPot:1750,role:'pp'},
     {name:'Bec',     fullName:'Bec',              appTarget:0,  keptRatio:0,  ppTarget:70,ppPot:1750,role:'pp'},
+    {name:'Naomi',   fullName:'Naomi Lewis',      appTarget:0,  keptRatio:0,  ppTarget:40,ppPot:1000,role:'pp'},
   ],
   overrides:{
     Michelle:{MARCH:{appTarget:80}},Sheniz:{MARCH:{appTarget:80}},
@@ -252,7 +277,8 @@ const SEED={
     Sam:{},
     Dragana: {JAN:{made:15,kept:17,pp:14},FEB:{made:12,kept:7,pp:17},MARCH:{made:15,kept:10,pp:20}},
     Lance:   {JAN:{made:0,kept:0,pp:63},FEB:{made:0,kept:0,pp:46},MARCH:{made:0,kept:0,pp:33}},
-    Bec:{}
+    Bec:{},
+    Naomi:{}
   }
 };
 
@@ -557,6 +583,94 @@ document.querySelectorAll('.tab').forEach(t=>t.addEventListener('click',function
   if(this.dataset.tab==='team')renderTeam();
   if(this.dataset.tab==='admin')renderAdmin(null);
 }));
+
+document.getElementById('ytd-import-btn').addEventListener('click',async function(){
+  const mF=document.getElementById('ytd-made').files[0];
+  const kF=document.getElementById('ytd-kept').files[0];
+  const pF=document.getElementById('ytd-pp').files[0];
+  const res=document.getElementById('ytd-result');
+  if(!mF&&!kF&&!pF){res.innerHTML='<span style="color:#8A1F1F">Please select at least one CSV file.</span>';return;}
+
+  const agMade={},agKept={},agBonus={},agPP={};
+  const unmatched=new Set();
+
+  function parseMonth(ds){
+    if(!ds)return null;
+    const M={jan:'JAN',feb:'FEB',mar:'MARCH',apr:'APRIL',may:'MAY',jun:'JUNE',jul:'JULY',aug:'AUG',sep:'SEPT',oct:'OCT',nov:'NOV',dec:'DEC'};
+    const m=ds.match(/\d+\s+([A-Za-z]+)/);
+    if(!m)return null;
+    return M[m[1].toLowerCase().slice(0,3)]||null;
+  }
+
+  if(mF){
+    parseCSV(await mF.text()).forEach(r=>{
+      const ag=matchAgent(r['Lead Owner']);
+      if(!ag){unmatched.add(r['Lead Owner']);return;}
+      const m=parseMonth(r['Date Appointment Made']);
+      if(!m)return;
+      if(!agMade[ag.name])agMade[ag.name]={};
+      agMade[ag.name][m]=(agMade[ag.name][m]||0)+1;
+    });
+  }
+  if(kF){
+    parseCSV(await kF.text()).forEach(r=>{
+      const ag=matchAgent(r['Lead Owner']);
+      if(!ag){unmatched.add(r['Lead Owner']);return;}
+      const m=parseMonth(r['Appointment Kept Date']);
+      if(!m)return;
+      if(!agKept[ag.name])agKept[ag.name]={};
+      if(!agBonus[ag.name])agBonus[ag.name]={};
+      agKept[ag.name][m]=(agKept[ag.name][m]||0)+1;
+      agBonus[ag.name][m]=(agBonus[ag.name][m]||0)+parseFloat(r['Bonus Payment']||0);
+    });
+  }
+  if(pF){
+    parseCSV(await pF.text()).forEach(r=>{
+      const ag=matchAgent(r['Lead Owner']);
+      if(!ag){unmatched.add(r['Lead Owner']);return;}
+      const m=parseMonth(r['PP Payment Date']);
+      if(!m)return;
+      if(!agPP[ag.name])agPP[ag.name]={};
+      agPP[ag.name][m]=(agPP[ag.name][m]||0)+1;
+    });
+  }
+
+  // Write all months for all matched agents
+  const agentNames=new Set([...Object.keys(agMade),...Object.keys(agKept),...Object.keys(agPP)]);
+  let totalUpdates=0;
+  agentNames.forEach(name=>{
+    if(!S.actuals[name])S.actuals[name]={};
+    const months=new Set([
+      ...Object.keys(agMade[name]||{}),
+      ...Object.keys(agKept[name]||{}),
+      ...Object.keys(agPP[name]||{})
+    ]);
+    months.forEach(m=>{
+      const ex=S.actuals[name][m]||{made:0,kept:0,pp:0};
+      S.actuals[name][m]={
+        made:agMade[name]&&agMade[name][m]!==undefined?agMade[name][m]:ex.made,
+        kept:agKept[name]&&agKept[name][m]!==undefined?agKept[name][m]:ex.kept,
+        pp:agPP[name]&&agPP[name][m]!==undefined?agPP[name][m]:ex.pp,
+        appBonusOverride:agBonus[name]&&agBonus[name][m]!==undefined?agBonus[name][m]:ex.appBonusOverride
+      };
+      totalUpdates++;
+    });
+  });
+
+  saveState();renderDash();
+
+  const summary=[...agentNames].map(name=>{
+    const monthCount=new Set([...Object.keys(agMade[name]||{}),...Object.keys(agKept[name]||{}),...Object.keys(agPP[name]||{})]).size;
+    return '<strong>'+name+'</strong>: '+monthCount+' month'+(monthCount!==1?'s':'')+' updated';
+  });
+
+  let html='<div style="color:#1D6B38;background:#E6F4EC;border-radius:8px;padding:10px 14px;">'
+    +'<strong>Year upload complete</strong> — '+totalUpdates+' month records updated<br>'+summary.join('<br>')+'</div>';
+  if(unmatched.size){
+    html+='<div class="unmatched"><strong>Unmatched names — add in Admin:</strong> '+[...unmatched].join(', ')+'</div>';
+  }
+  res.innerHTML=html;
+});
 
 S=loadState();
 populateSel('e-agent');
