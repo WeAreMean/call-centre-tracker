@@ -385,7 +385,7 @@ document.getElementById('csv-import-btn').addEventListener('click',async functio
   const ppF2=document.getElementById('csv-pp').files[0];
   if(!mF&&!kF&&!ppF2){res.innerHTML='<span style="color:#8A1F1F">Please select at least one CSV file.</span>';return;}
 
-  const agMade={},agKept={},agBonus={},agPP={};
+  const agMade={},agKept={},agKeptGap={},agKeptMpe={},agBonus={},agPP={};
   const unmatched=new Set();
 
   if(mF){
@@ -399,8 +399,11 @@ document.getElementById('csv-import-btn').addEventListener('click',async functio
     parseCSV(await kF.text()).forEach(r=>{
       const ag=matchAgent(r['Lead Owner']);
       if(!ag){unmatched.add(r['Lead Owner']);return;}
+      const bp=parseFloat(r['Bonus Payment']||0);
       agKept[ag.name]=(agKept[ag.name]||0)+1;
-      agBonus[ag.name]=(agBonus[ag.name]||0)+parseFloat(r['Bonus Payment']||0);
+      agBonus[ag.name]=(agBonus[ag.name]||0)+bp;
+      if(bp<=10){agKeptMpe[ag.name]=(agKeptMpe[ag.name]||0)+1;}
+      else{agKeptGap[ag.name]=(agKeptGap[ag.name]||0)+1;}
     });
   }
   const ppF=document.getElementById('csv-pp').files[0];
@@ -420,6 +423,8 @@ document.getElementById('csv-import-btn').addEventListener('click',async functio
     S.actuals[name][month]={
       made:agMade[name]!==undefined?agMade[name]:ex.made,
       kept:agKept[name]!==undefined?agKept[name]:ex.kept,
+      keptGap:agKeptGap[name]!==undefined?agKeptGap[name]:ex.keptGap,
+      keptMpe:agKeptMpe[name]!==undefined?agKeptMpe[name]:ex.keptMpe,
       pp:agPP[name]!==undefined?agPP[name]:ex.pp,
       appBonusOverride:agBonus[name]!==undefined?agBonus[name]:ex.appBonusOverride
     };
@@ -591,7 +596,7 @@ document.getElementById('ytd-import-btn').addEventListener('click',async functio
   const res=document.getElementById('ytd-result');
   if(!mF&&!kF&&!pF){res.innerHTML='<span style="color:#8A1F1F">Please select at least one CSV file.</span>';return;}
 
-  const agMade={},agKept={},agBonus={},agPP={};
+  const agMade={},agKept={},agKeptGap={},agKeptMpe={},agBonus={},agPP={};
   const unmatched=new Set();
 
   function parseMonth(ds){
@@ -619,9 +624,14 @@ document.getElementById('ytd-import-btn').addEventListener('click',async functio
       const m=parseMonth(r['Appointment Kept Date']);
       if(!m)return;
       if(!agKept[ag.name])agKept[ag.name]={};
+      if(!agKeptGap[ag.name])agKeptGap[ag.name]={};
+      if(!agKeptMpe[ag.name])agKeptMpe[ag.name]={};
       if(!agBonus[ag.name])agBonus[ag.name]={};
+      const bpY=parseFloat(r['Bonus Payment']||0);
       agKept[ag.name][m]=(agKept[ag.name][m]||0)+1;
-      agBonus[ag.name][m]=(agBonus[ag.name][m]||0)+parseFloat(r['Bonus Payment']||0);
+      agBonus[ag.name][m]=(agBonus[ag.name][m]||0)+bpY;
+      if(bpY<=10){agKeptMpe[ag.name][m]=(agKeptMpe[ag.name][m]||0)+1;}
+      else{agKeptGap[ag.name][m]=(agKeptGap[ag.name][m]||0)+1;}
     });
   }
   if(pF){
@@ -650,6 +660,8 @@ document.getElementById('ytd-import-btn').addEventListener('click',async functio
       S.actuals[name][m]={
         made:agMade[name]&&agMade[name][m]!==undefined?agMade[name][m]:ex.made,
         kept:agKept[name]&&agKept[name][m]!==undefined?agKept[name][m]:ex.kept,
+        keptGap:agKeptGap[name]&&agKeptGap[name][m]!==undefined?agKeptGap[name][m]:ex.keptGap,
+        keptMpe:agKeptMpe[name]&&agKeptMpe[name][m]!==undefined?agKeptMpe[name][m]:ex.keptMpe,
         pp:agPP[name]&&agPP[name][m]!==undefined?agPP[name][m]:ex.pp,
         appBonusOverride:agBonus[name]&&agBonus[name][m]!==undefined?agBonus[name][m]:ex.appBonusOverride
       };
